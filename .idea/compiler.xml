@@ -9,5 +9,6 @@
         <module name="kafka-twitter-project" />
       </profile>
     </annotationProcessing>
+    <bytecodeTargetLevel target="8" />
   </component>
 </project>
