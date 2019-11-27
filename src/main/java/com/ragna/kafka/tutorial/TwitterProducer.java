@@ -1,6 +1,5 @@
 package com.ragna.kafka.tutorial;
 
-import com.google.common.collect.Lists;
 import com.twitter.hbc.ClientBuilder;
 import com.twitter.hbc.core.Client;
 import com.twitter.hbc.core.Constants;
@@ -8,12 +7,15 @@ import com.twitter.hbc.core.Hosts;
 import com.twitter.hbc.core.HttpHosts;
 import com.twitter.hbc.core.endpoint.StatusesFilterEndpoint;
 import com.twitter.hbc.core.processor.StringDelimitedProcessor;
-import com.twitter.hbc.httpclient.BasicClient;
 import com.twitter.hbc.httpclient.auth.Authentication;
 import com.twitter.hbc.httpclient.auth.OAuth1;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -21,13 +23,10 @@ import java.util.concurrent.TimeUnit;
 
 public class TwitterProducer {
 
-    Logger logger = LoggerFactory.getLogger(TwitterProducer.class.getName());
-
-    // Auth data
-    private String consumerKey = "sbfRsXNRsGtVQLHKxJ90HtmCh";
-    private String consumerSecret = "WKNOxA0cEQjJC0A7LVMM39cDyS93qJWiw8FIMWLI4TLIsNCh6J";
-    private String token = "1581135692-ru99UByfK0SYE21xtZe8H1UZ4wJoF8yqA7Td5X1";
-    private String tokenSecret = "V0GUdFJTPGbrAzl9n9fYiF6Zbl0soEfRfvz64m1568Z3W";
+    private Logger logger = LoggerFactory.getLogger(TwitterProducer.class.getName());
+    private final String CONFIG_FILENAME = getClass().getResource("/config/auth_data.txt").getPath();
+    private final String FOLLOW_FILENAME = getClass().getResource("/config/follow_people.txt").getPath();
+    private final String TERMS_FILENAME = getClass().getResource("/config/follow_topic.txt").getPath();
 
     public static void main(String[] args) {
         new TwitterProducer().run();
@@ -42,7 +41,7 @@ public class TwitterProducer {
 
         /* Blocking queues: where the data fetched will be allocated */
         logger.info("Setting up Twitter client");
-        BlockingQueue<String> msgQueue = new LinkedBlockingQueue<String>(1000);
+        BlockingQueue<String> msgQueue = new LinkedBlockingQueue<>(1000);
         Client client = createTwitterClients(msgQueue);
         logger.info("Twitter client ready");
         client.connect();
@@ -66,21 +65,25 @@ public class TwitterProducer {
         logger.info("End of application.");
     }
 
-    public Client createTwitterClients (BlockingQueue<String> msgQueue) {
+    private Client createTwitterClients(BlockingQueue<String> msgQueue) {
 
         // Client setup
 
         /* Declare the host you want to connect to, the endpoint, and authentication (basic auth or oauth) */
         Hosts hosebirdHosts = new HttpHosts(Constants.STREAM_HOST);
         StatusesFilterEndpoint hosebirdEndpoint = new StatusesFilterEndpoint();
-        // Optional: set up some followings of people or terms
-        List<Long> followings = Lists.newArrayList(1234L, 566788L);
-        List<String> terms = Lists.newArrayList("kafka", "tesla");
+
+        // Set up some followings of people or terms
+        List<Long> followings = ClientConfiguration.loadFollowPeopleData(FOLLOW_FILENAME);
+        List<String> terms = ClientConfiguration.loadFollowTermsData(TERMS_FILENAME);
+        logger.info(terms.toString());
+
         hosebirdEndpoint.followings(followings);
         hosebirdEndpoint.trackTerms(terms);
 
         // Twitter client authentication
-        Authentication hosebirdAuth = new OAuth1(consumerKey, consumerSecret, token, tokenSecret);
+        String [] authData = ClientConfiguration.loadAuthData(CONFIG_FILENAME);
+        Authentication hosebirdAuth = new OAuth1(authData[0], authData[1], authData[2], authData[3]);
 
         // Client build & connect
         ClientBuilder builder = new ClientBuilder()
@@ -91,5 +94,65 @@ public class TwitterProducer {
                 .processor(new StringDelimitedProcessor(msgQueue)); // where to process
 
         return builder.build();
+    }
+}
+
+class ClientConfiguration {
+
+    private static Logger logger = LoggerFactory.getLogger(TwitterProducer.class.getName());
+
+    // Load 4 pieces of data needed to authenticate the client
+    static String[] loadAuthData(String filename) {
+        String[] authData = new String[4];
+        try (BufferedReader br = new BufferedReader(new FileReader(filename))) {
+            String line;
+            for (int i = 0; i < authData.length; i++){
+                line = br.readLine();
+                if (line != null)
+                    authData[i] = line;
+                else // No info to read
+                    authData[i] = "";
+            }
+        }
+        catch (IOException e){
+            e.printStackTrace();
+        }
+        return authData;
+    }
+
+    // Load a file and return each line's text trimmed in a list
+    static List<Long> loadFollowPeopleData(String filename) {
+        ArrayList<Long> loadFollowPeopleData = new ArrayList<>();
+        try (BufferedReader br = new BufferedReader(new FileReader(filename))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                try {
+                    Long followId = Long.parseLong(line.trim());
+                    loadFollowPeopleData.add(followId);
+                }
+                catch (NumberFormatException e){
+                    logger.info("Invalid ID to follow provided");
+                }
+            }
+        }
+        catch (IOException e){
+            e.printStackTrace();
+        }
+        return loadFollowPeopleData;
+    }
+
+    // Load a file and return each line's text trimmed in a list
+    static List<String> loadFollowTermsData(String filename) {
+        ArrayList<String> loadFollowTermsData = new ArrayList<>();
+        try (BufferedReader br = new BufferedReader(new FileReader(filename))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                loadFollowTermsData.add(line.trim());
+            }
+        }
+        catch (IOException e){
+            e.printStackTrace();
+        }
+        return loadFollowTermsData;
     }
 }
