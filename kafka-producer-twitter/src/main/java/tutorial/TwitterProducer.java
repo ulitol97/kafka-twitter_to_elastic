@@ -1,4 +1,4 @@
-package com.ragna.kafka.tutorial;
+package tutorial;
 
 import com.twitter.hbc.ClientBuilder;
 import com.twitter.hbc.core.Client;
