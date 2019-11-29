@@ -99,6 +99,13 @@ public class TwitterProducer {
         properties.setProperty(ProducerConfig.ACKS_CONFIG, "all"); // redundant, just to declare it explicitly
         properties.setProperty(ProducerConfig.RETRIES_CONFIG, Integer.toString(Integer.MAX_VALUE)); // redundant, just to declare it explicitly
         properties.setProperty(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, "5"); // redundant, just to declare it explicitly
+
+        // Send compressed data (faster data transmission)
+        properties.setProperty(ProducerConfig.COMPRESSION_TYPE_CONFIG, "snappy");
+        // Time to wait (ms) before sending a batch of messages (maybe more messages can be included in the batch in that time)
+        properties.setProperty(ProducerConfig.LINGER_MS_CONFIG, "15");
+        // Adjust the size of the batches to be compressed (bytes per batch)
+        properties.setProperty(ProducerConfig.BATCH_SIZE_CONFIG, Integer.toString(32*1024)); // 32 kb
         // Create producer <Key type, Value type>
         return new KafkaProducer<>(properties);
     }
