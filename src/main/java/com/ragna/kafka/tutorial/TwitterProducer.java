@@ -9,6 +9,8 @@ import com.twitter.hbc.core.endpoint.StatusesFilterEndpoint;
 import com.twitter.hbc.core.processor.StringDelimitedProcessor;
 import com.twitter.hbc.httpclient.auth.Authentication;
 import com.twitter.hbc.httpclient.auth.OAuth1;
+import org.apache.kafka.clients.producer.*;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -17,6 +19,7 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Properties;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -32,10 +35,6 @@ public class TwitterProducer {
         new TwitterProducer().run();
     }
 
-    private TwitterProducer() {
-
-    }
-
     private void run() {
         // Create Twitter Client
 
@@ -47,22 +46,56 @@ public class TwitterProducer {
         client.connect();
         logger.info("Twitter client connected!");
 
-        // Create Kafka producer with tweet data
+        // Create Kafka producer
+        KafkaProducer<String, String> producer = createKafkaProducer();
+
+        // Shutdown hook
+        Runtime.getRuntime().addShutdownHook(new Thread( () -> {
+            logger.info("Stopping application clients and producers...");
+            client.stop();
+            producer.close();
+            logger.info("Terminating.");
+        }));
 
         // loop to poll for new tweets to send to kafka
-
-        // test: send tweets to console kafka consumer
         while (!client.isDone()){
+            String msg = null;
             try {
-                String msg = msgQueue.poll(5, TimeUnit.SECONDS);
-                logger.info(msg);
+                msg = msgQueue.poll(5, TimeUnit.SECONDS);
             } catch (InterruptedException e) {
                 logger.error("Error retrieving data");
                 e.printStackTrace();
                 client.stop();
             }
+
+            if (msg != null){
+                logger.info(msg);
+                producer.send(new ProducerRecord<>("twitter-tweets", null, msg),
+                        new Callback() {
+                            @Override
+                            public void onCompletion(RecordMetadata recordMetadata, Exception e) {
+                                if (e != null){
+                                    logger.error("Something went wrong processing tweet data", e);
+                                }
+                            }
+                        });
+            }
         }
         logger.info("End of application.");
+    }
+
+    private KafkaProducer<String, String> createKafkaProducer() {
+        //        Create producer properties
+        Properties properties = new Properties();
+        String bootstrapServers = "127.0.0.1:9092";
+
+        properties.setProperty(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        // Info sent through Kafka is converted into bytes, so a (de)serialization process is needed
+        properties.setProperty(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        properties.setProperty(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+
+    //  Create producer <Key type, Value type>
+        return new KafkaProducer<>(properties);
     }
 
     private Client createTwitterClients(BlockingQueue<String> msgQueue) {
