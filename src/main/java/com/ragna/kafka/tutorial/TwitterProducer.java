@@ -85,7 +85,7 @@ public class TwitterProducer {
     }
 
     private KafkaProducer<String, String> createKafkaProducer() {
-        //        Create producer properties
+        // Create producer properties
         Properties properties = new Properties();
         String bootstrapServers = "127.0.0.1:9092";
 
@@ -94,7 +94,12 @@ public class TwitterProducer {
         properties.setProperty(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         properties.setProperty(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
 
-    //  Create producer <Key type, Value type>
+        // Create safer producer (no duplication + ensure ordering) while keeping 5 parallel writes
+        properties.setProperty(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
+        properties.setProperty(ProducerConfig.ACKS_CONFIG, "all"); // redundant, just to declare it explicitly
+        properties.setProperty(ProducerConfig.RETRIES_CONFIG, Integer.toString(Integer.MAX_VALUE)); // redundant, just to declare it explicitly
+        properties.setProperty(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, "5"); // redundant, just to declare it explicitly
+        // Create producer <Key type, Value type>
         return new KafkaProducer<>(properties);
     }
 
