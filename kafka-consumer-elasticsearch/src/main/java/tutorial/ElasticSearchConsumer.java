@@ -90,6 +90,7 @@ public class ElasticSearchConsumer {
         indexRequest.source(jsonValue, XContentType.JSON);
 
         // We tell elastic which id to use to avoid duplicates. We'll use the tweet IDs as Elastic IDs
+        // It is common to use Topic_Partition_Offset as a unique ID too.
         indexRequest.id(ExtractIdFromTweet(jsonValue));
 
         // Return the request ready to be run
