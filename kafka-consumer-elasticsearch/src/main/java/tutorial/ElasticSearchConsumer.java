@@ -1,5 +1,6 @@
 package tutorial;
 
+import com.google.gson.JsonParser;
 import org.apache.http.HttpHost;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.UsernamePasswordCredentials;
@@ -29,7 +30,7 @@ import java.util.Properties;
 
 public class ElasticSearchConsumer {
 
-    private Logger logger = LoggerFactory.getLogger(ElasticSearchConsumer.class.getName());
+    private static Logger logger = LoggerFactory.getLogger(ElasticSearchConsumer.class.getName());
     private final String CONFIG_FILENAME = getClass().getResource("/config/auth_data.txt").getPath();
     private RestHighLevelClient client;
 
@@ -60,17 +61,7 @@ public class ElasticSearchConsumer {
                     e.printStackTrace();
                     logger.error("Error in request");
                 }
-
-
-//                StringBuilder sb = new StringBuilder();
-//                sb.append("Key: ").append(record.key()).append(System.lineSeparator());
-//                sb.append("Value: ").append(record.value()).append(System.lineSeparator());
-//                sb.append("Partition: ").append(record.partition()).append(System.lineSeparator());
-//                sb.append("Offset: ").append(record.offset()).append(System.lineSeparator());
-//
-//                logger.info(sb.toString());
             }
-
         }
 
 //        client.close();
@@ -83,9 +74,17 @@ public class ElasticSearchConsumer {
         IndexRequest indexRequest = new IndexRequest("twitter");
         indexRequest.source(jsonValue, XContentType.JSON);
 
+        // We tell elastic which id to use to avoid duplicates. We'll use the tweet IDs as Elastic IDs
+        indexRequest.id(ExtractIdFromTweet(jsonValue));
+
         // Run request and insert data
         IndexResponse indexResponse = client.index(indexRequest, RequestOptions.DEFAULT);
         return indexResponse.getId();
+    }
+
+    private String ExtractIdFromTweet(String tweetJson) {
+        // Use Gson library to get the tweet IF from the Json object with the whole tweet data
+        return JsonParser.parseString(tweetJson).getAsJsonObject().get("id_str").getAsString();
     }
 
     // Create Kafka Consumer
@@ -101,6 +100,9 @@ public class ElasticSearchConsumer {
         properties.setProperty(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
 
         properties.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest"); // Consume from the beginning of topic
+
+        // Config idempotence
+
 
         // Create consumer
         KafkaConsumer<String, String> consumer = new KafkaConsumer<>(properties);
