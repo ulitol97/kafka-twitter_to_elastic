@@ -98,7 +98,7 @@ public class ElasticSearchConsumer {
     }
 
     private String ExtractIdFromTweet(String tweetJson) {
-        // Use Gson library to get the tweet IF from the Json object with the whole tweet data
+        // Use Gson library to get the tweet ID from the Json object with the whole tweet data
         return JsonParser.parseString(tweetJson).getAsJsonObject().get("id_str").getAsString();
     }
 
