@@ -11,8 +11,8 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.elasticsearch.action.bulk.BulkRequest;
 import org.elasticsearch.action.index.IndexRequest;
-import org.elasticsearch.action.index.IndexResponse;
 import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestClient;
 import org.elasticsearch.client.RestClientBuilder;
@@ -49,26 +49,41 @@ public class ElasticSearchConsumer {
         ConsumerRecords<String, String> records;
         while (true){
             records = consumer.poll(Duration.ofMillis(100)); // Timeout length
+            logger.info("Received " + records.count() + " records to be processed.");
 
+            // Bulk requests process a number if index requests altogether to earn time
+            BulkRequest bulkRequest = new BulkRequest();
             // For each record, insert its data into elastic
             for (ConsumerRecord<String, String> record : records){
+                    try {
+                        bulkRequest.add(CreateInsertRequest(record.value()));
+                    }
+                    catch (NullPointerException e){
+                        logger.warn("Skipping bad data (no tweet id found):\n" + record.value());
+                }
+            }
 
+            // Execute the bulk request if there's data to send
+            if (bulkRequest.requests().size() > 0){
+                logger.info("Running block of requests (" + bulkRequest.requests().size() + " requests)");
                 try {
-                    String id = InsertIntoElastic(record.value());
-                    logger.info("ID: " + id + " inserted");
-                    Thread.sleep(1000);
-                } catch (IOException | InterruptedException e) {
+                    client.bulk(bulkRequest, RequestOptions.DEFAULT);
+                } catch (IOException e) {
                     e.printStackTrace();
                     logger.error("Error in request");
                 }
             }
+
+            // The records consumed have been processed (inserted into elastic), we should commit consumer offsets
+            consumer.commitSync();
+            logger.info("Consumer offsets committed");
         }
 
 //        client.close();
     }
 
     // Send data to elastic
-    private String InsertIntoElastic(String jsonValue) throws IOException {
+    private IndexRequest CreateInsertRequest(String jsonValue) {
 
         // Type is "_doc".
         IndexRequest indexRequest = new IndexRequest("twitter");
@@ -77,9 +92,8 @@ public class ElasticSearchConsumer {
         // We tell elastic which id to use to avoid duplicates. We'll use the tweet IDs as Elastic IDs
         indexRequest.id(ExtractIdFromTweet(jsonValue));
 
-        // Run request and insert data
-        IndexResponse indexResponse = client.index(indexRequest, RequestOptions.DEFAULT);
-        return indexResponse.getId();
+        // Return the request ready to be run
+        return indexRequest;
     }
 
     private String ExtractIdFromTweet(String tweetJson) {
@@ -100,6 +114,8 @@ public class ElasticSearchConsumer {
         properties.setProperty(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
 
         properties.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest"); // Consume from the beginning of topic
+        properties.setProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false"); // We'll commit read offsets manually
+        properties.setProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "100"); // Get a maximum of N records per poll
 
         // Config idempotence
 
